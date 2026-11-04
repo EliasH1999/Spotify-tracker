@@ -7,6 +7,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from .metadata import parse_duration_ms
+
 API_URL = "https://ws.audioscrobbler.com/2.0/"
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 MAX_PAGES = 20
@@ -41,7 +43,7 @@ def _decode_response(body):
     return payload
 
 
-def _check_api_error(payload):
+def _check_api_error(payload, method=None):
     if "error" not in payload:
         return
     try:
@@ -56,6 +58,9 @@ def _check_api_error(payload):
         26: "Last.fm has suspended this API key. Check its status on Last.fm.",
         29: "Last.fm is rate-limiting requests. Wait before trying again.",
     }
+    if method == "track.getInfo":
+        messages[6] = "Last.fm could not find track metadata for that artist and track."
+        messages[7] = "Last.fm could not find track metadata for that artist and track."
     if code in (8, 11, 16):
         raise _TemporaryError("Last.fm is temporarily unavailable. Try again shortly.")
     raise LastFmError(messages.get(code, f"Last.fm rejected the request (error {code})."))
@@ -119,10 +124,10 @@ class LastFmClient:
                         if error.code in (500, 502, 503, 504):
                             raise _TemporaryError("Last.fm is temporarily unavailable. Try again shortly.") from None
                         payload = _decode_response(error.read(MAX_RESPONSE_BYTES + 1))
-                        _check_api_error(payload)
+                        _check_api_error(payload, parameters.get("method"))
                         raise LastFmError(f"Last.fm rejected the request (HTTP {error.code}).") from None
                 payload = _decode_response(body)
-                _check_api_error(payload)
+                _check_api_error(payload, parameters.get("method"))
                 return payload
             except (URLError, TimeoutError, ConnectionError, OSError, _TemporaryError) as error:
                 if attempt == MAX_ATTEMPTS - 1:
@@ -131,6 +136,29 @@ class LastFmClient:
                     )
                     raise LastFmError(message) from None
                 time.sleep(0.5 * (attempt + 1))
+
+    def get_track_duration(self, artist, track):
+        """Fetch one track's metadata and validate its duration using our parser."""
+        if not all(isinstance(value, str) and value.strip() for value in (artist, track)):
+            raise LastFmError("Provide both an artist and a track name for the metadata lookup.")
+        payload = self._request({
+            "method": "track.getInfo",
+            "artist": artist.strip(),
+            "track": track.strip(),
+            "autocorrect": 0,
+        })
+        track_info = payload.get("track")
+        if not isinstance(track_info, dict):
+            raise LastFmError("Last.fm returned an invalid track metadata response.")
+        duration = track_info.get("duration")
+        if duration is not None and (
+            isinstance(duration, bool) or not isinstance(duration, (str, int))
+        ):
+            raise LastFmError("Last.fm returned an invalid track duration.")
+        try:
+            return parse_duration_ms(track_info)
+        except (TypeError, ValueError, OverflowError):
+            raise LastFmError("Last.fm returned an invalid track duration.") from None
 
     def get_recent_tracks(self, username, *, limit=10, start=None, end=None):
         """Return up to 200 recorded plays, with optional [start, end) filtering.
