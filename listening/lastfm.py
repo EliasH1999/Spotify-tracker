@@ -7,6 +7,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from .identity import normalize_name
 from .metadata import parse_duration_ms
 
 API_URL = "https://ws.audioscrobbler.com/2.0/"
@@ -160,69 +161,86 @@ class LastFmClient:
         except (TypeError, ValueError, OverflowError):
             raise LastFmError("Last.fm returned an invalid track duration.") from None
 
-    def get_recent_tracks(self, username, *, limit=10, start=None, end=None):
-        """Return up to 200 recorded plays, with optional [start, end) filtering.
+    def iter_recent_pages(self, username, *, start=None, end=None, page_size=200, max_pages=200):
+        """Yield validated pages without truncating history at the preview limit.
 
-        Fix the upper time bound before pagination so new scrobbles do not
-        shift the requested history between pages. Bounds must be timezone-aware.
+        The importer can commit each yielded page before requesting the next.
+        If the safety limit is reached, raise instead of claiming full coverage.
         """
         if not isinstance(username, str) or not username.strip():
             raise LastFmError("Set LASTFM_USERNAME in the local .env file first.")
-        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
-            raise LastFmError("Choose a limit between 1 and 200 recorded plays.")
+        if isinstance(page_size, bool) or not isinstance(page_size, int) or not 1 <= page_size <= 200:
+            raise LastFmError("Choose a page size between 1 and 200.")
+        if isinstance(max_pages, bool) or not isinstance(max_pages, int) or not 1 <= max_pages <= 200:
+            raise LastFmError("Choose a page safety limit between 1 and 200.")
         for boundary in (start, end):
             if boundary is not None and (
                 not isinstance(boundary, datetime) or boundary.utcoffset() is None
             ):
                 raise LastFmError("Date bounds must include a timezone.")
-        snapshot_end = min(end, datetime.now(timezone.utc)) if end else datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc)
+        snapshot_end = min(end, now) if end else now
         if start and start >= snapshot_end:
             raise LastFmError("The start of the requested range must precede its end.")
 
         parameters = {
             "method": "user.getRecentTracks",
             "user": username.strip(),
-            "limit": min(50, limit + 1),
+            "limit": page_size,
             # Pad strict API bounds, then apply our exact half-open interval below.
             "to": int(snapshot_end.timestamp()) + 1,
         }
         if start:
             parameters["from"] = int(start.timestamp()) - 1
 
-        records = []
-        seen = set()
-        for page in range(1, MAX_PAGES + 1):
-            payload = self._request({**parameters, "page": page})
+        for page_number in range(1, max_pages + 1):
+            payload = self._request({**parameters, "page": page_number})
             try:
                 recent = payload["recenttracks"]
                 rows = recent["track"]
-                page_number = int(recent["@attr"]["page"])
+                returned_page = int(recent["@attr"]["page"])
                 total_pages = int(recent["@attr"]["totalPages"])
             except (KeyError, TypeError, ValueError, OverflowError):
                 raise LastFmError("Last.fm returned incomplete pagination information.") from None
-            if page_number != page or total_pages < 0:
+            if returned_page != page_number or total_pages < 0 or (total_pages > 0 and page_number > total_pages):
                 raise LastFmError("Last.fm returned inconsistent pagination information.")
             if isinstance(rows, dict):
                 rows = [rows]
             if not isinstance(rows, list):
                 raise LastFmError("Last.fm returned an invalid track list.")
-            if not rows and page < total_pages:
+            if not rows and page_number < total_pages:
                 raise LastFmError("Last.fm returned an empty page before the end of its history. Try again.")
 
+            records = []
             for row in rows:
                 record = _recorded_play(row)
                 if record is None:
                     continue
                 if record.played_at >= snapshot_end or (start and record.played_at < start):
                     continue
-                identity = (record.artist.casefold(), record.track.casefold(), record.played_at)
+                records.append(record)
+            yield records
+            if page_number >= total_pages:
+                return
+        raise LastFmError(f"Stopped after {max_pages} pages. Request a smaller date range and try again.")
+
+    def get_recent_tracks(self, username, *, limit=10, start=None, end=None):
+        """Return a bounded preview while sharing the importer's page validation."""
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
+            raise LastFmError("Choose a limit between 1 and 200 recorded plays.")
+        records = []
+        seen = set()
+        pages = self.iter_recent_pages(
+            username, start=start, end=end,
+            page_size=min(50, limit + 1), max_pages=MAX_PAGES,
+        )
+        for page in pages:
+            for record in page:
+                identity = (normalize_name(record.artist), normalize_name(record.track), record.played_at)
                 if identity in seen:
                     continue
                 seen.add(identity)
                 records.append(record)
                 if len(records) == limit:
                     return records
-
-            if page >= total_pages:
-                return records
-        raise LastFmError("Stopped after 20 pages. Request a smaller date range and try again.")
+        return records
