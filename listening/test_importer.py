@@ -145,3 +145,11 @@ class ImportWindowTests(TestCase):
         self.assertEqual(result.run.status, SyncRun.Status.COMPLETE)
         self.assertEqual(result.run.plays_added, 0)
         self.assertEqual(Listen.objects.count(), 0)
+
+    def test_different_tracks_at_the_same_timestamp_remain_separate(self):
+        other = replace(self.record, track="Another Track")
+        self.lastfm.iter_recent_pages.return_value = [[self.record, other]]
+        result = self.import_sample()
+        self.assertEqual(result.run.plays_added, 2)
+        self.assertEqual(Listen.objects.count(), 2)
+        self.assertEqual(Track.objects.count(), 2)
