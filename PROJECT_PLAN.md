@@ -1,6 +1,6 @@
 # Listening Dashboard: Project Plan
 
-Status: Milestones 1 and 2 implemented and verified; real listening storage is next.
+Status: Milestones 1-3 implemented; persistent listening and commands are ready for review.
 Last updated: 2026-11-04.
 
 ## 1. Purpose and agreed direction
@@ -181,7 +181,7 @@ Capabilities and policies can change. Recheck relevant documentation when implem
 
 Before milestone 1, inspect installed Python and settle reproducible dependencies. Before milestone 2, configure the Last.fm username and obtain an API key through Last.fm; never request secrets in chat. Before hosted/friend use, settle budget, access boundaries, profile verification, retention, and provider permissions.
 
-The user authorized Milestone 1 and then prepared a Last.fm API key for Milestone 2. Work continues one milestone at a time. Milestone 3 has a draft and will now proceed through alternating pair programming.
+The user authorized Milestone 1 and then prepared a Last.fm API key for Milestone 2. Work continues one milestone at a time through alternating pair programming. Milestone 3 is implemented; milestone 4 has not started.
 
 ## 9. Implementation progress
 
@@ -210,3 +210,16 @@ The user authorized Milestone 1 and then prepared a Last.fm API key for Mileston
 - Verified: Django checks; 27 offline tests, including all seven existing dashboard tests; live command returned three real recorded plays, with no API key in its output.
 - This milestone is a terminal preview. Listening records are not persisted, and the browser dashboard still uses synthetic data.
 - Next: the user can run fetch_recent to inspect real records; milestone 3 adds reliable storage and repeatable imports.
+
+### Milestone 3: persistence and commands implemented
+
+- The learner wrote duration parsing and tests for name normalization, duplicate-event rejection, and repeat-import behavior. Development switched to alternating small implementation pieces.
+- Added models and an initial migration for listening profiles, tracks, timestamped listens, and sync attempts. The learner generated/applied the migration and made the storage-model commit.
+- Added exact normalized identities and database uniqueness on profile, track, and timestamp. Separate later plays and different tracks at one timestamp remain valid.
+- Added bounded page streaming for monthly history, atomic page saves/progress, safe retries, incomplete-window status, and an 80 MB SQLite/sidecar storage budget.
+- Added bounded track-duration caching. Duration coverage is independent of import-window completion.
+- Live verification imported 78 recorded plays; re-importing the same fixed window added zero and retained 78. One metadata lookup failed without invalidating history.
+- Added sync_listening and show_listens, input/error handling, shared terminal sanitization, and command-level tests. Local reads require no API key or HTTP request.
+- Local README contains command instructions, limits, and an intentional one-profile reset/reimport procedure. README and CONTRIBUTING remain locally excluded from Git.
+- Before merging the milestone, run checks and review the feature-branch diff. Personal configuration and SQLite data remain ignored.
+- Next: milestone 4 connects real database statistics to the dashboard through alternating implementation tasks.

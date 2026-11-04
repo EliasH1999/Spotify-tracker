@@ -1,6 +1,5 @@
 """Preview real recorded plays without writing to the listening database."""
 from datetime import datetime, timedelta
-import re
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
@@ -9,11 +8,7 @@ from django.utils import timezone
 
 from listening.forms import MonthForm
 from listening.lastfm import LastFmClient, LastFmError
-
-
-def _one_line(text):
-    """Keep external artist/track names from injecting terminal control codes."""
-    return re.sub(r"[\x00-\x1f\x7f-\x9f]", " ", text)
+from listening.terminal import one_line
 
 
 class Command(BaseCommand):
@@ -56,6 +51,6 @@ class Command(BaseCommand):
             self.stdout.write(f"Fetched {len(records)} recorded plays. Times shown in {settings.TIME_ZONE}.")
             for record in records:
                 local_time = timezone.localtime(record.played_at).strftime("%Y-%m-%d %H:%M")
-                self.stdout.write(f"{local_time} | {_one_line(record.artist)} — {_one_line(record.track)}")
+                self.stdout.write(f"{local_time} | {one_line(record.artist)} — {one_line(record.track)}")
             self.stdout.write("Preview only: no listening data was saved. The dashboard still uses sample data.")
         self.stdout.write("Data supplied by Last.fm: https://www.last.fm/")
