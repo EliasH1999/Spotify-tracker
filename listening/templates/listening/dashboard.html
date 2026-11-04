@@ -1,0 +1,132 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A personal listening dashboard. Milestone 1 uses invented sample data.">
+  <title>{% if selection_valid %}{{ selected_month|date:"F Y" }}{% else %}Choose a month{% endif %} · Listening Dashboard</title>
+  <link rel="icon" href="{% static 'listening/favicon.svg' %}" type="image/svg+xml">
+  <link rel="stylesheet" href="{% static 'listening/dashboard.css' %}">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to dashboard</a>
+  <aside class="sidebar" aria-label="Dashboard navigation">
+    <a class="brand" href="{% url 'listening:dashboard' %}">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <span>Listening<span class="brand-subtitle">DASHBOARD</span></span>
+    </a>
+    <p class="nav-label">YOUR SPACE</p>
+    <nav>
+      <a class="nav-link selected" href="#overview"><span aria-hidden="true">◈</span> Overview</a>
+      <a class="nav-link" href="#artists"><span aria-hidden="true">♫</span> Top artists</a>
+      <a class="nav-link" href="#tracks"><span aria-hidden="true">≋</span> Top tracks</a>
+    </nav>
+    <div class="sidebar-note">
+      <span class="small-label">A LITTLE CLOSER TO YOUR MUSIC</span>
+      <p>Your listening,<br>one month at a time.</p>
+      <div class="note-record" aria-hidden="true"><span></span></div>
+    </div>
+    <div class="sidebar-footer"><span class="status-dot" aria-hidden="true"></span> Local workspace <span class="footer-detail">Personal edition · Milestone 1</span></div>
+  </aside>
+
+  <main id="main">
+    <header class="topbar">
+      <span class="breadcrumb">Your library <span>/</span> Overview</span>
+      <span class="sample-pill"><span aria-hidden="true">◌</span> Sample mode</span>
+    </header>
+
+    <section class="page-heading" id="overview">
+      <div>
+        <p class="eyebrow">YOUR LISTENING, IN FOCUS</p>
+        <h1>{% if selection_valid %}{{ selected_month|date:"F" }}, in rotation<span>.</span>{% else %}Find your month<span>.</span>{% endif %}</h1>
+        <p class="intro">My listening, one month at a time.</p>
+      </div>
+      <form method="get" action="{% url 'listening:dashboard' %}" class="month-form">
+        <label for="{{ form.month.id_for_label }}">{{ form.month.label }}</label>
+        <div class="month-controls">{{ form.month }}<button type="submit">Explore <span aria-hidden="true">↗</span></button></div>
+      </form>
+    </section>
+
+    {% if form.errors %}
+      <div class="error-note" role="alert">
+        <strong>That month isn't available.</strong>
+        {{ form.month.errors }}
+        <a href="{% url 'listening:dashboard' %}">Return to this month</a>
+      </div>
+    {% endif %}
+
+    <div class="demo-note">
+      <span class="demo-icon" aria-hidden="true">i</span>
+      <p><strong>A preview of what's to come.</strong> All numbers and artist names here are invented sample data. Your Last.fm history is not connected to this app yet.</p>
+    </div>
+
+    {% if selection_valid %}
+      <div class="period-heading">
+        <h2>{{ selected_month|date:"F Y" }}</h2>
+        {% if is_partial %}<span class="period-pill">Month in progress</span>{% else %}<span class="period-pill completed">Completed calendar month</span>{% endif %}
+        <span class="timezone">Europe/Stockholm</span>
+      </div>
+
+      {% if dashboard %}
+        <section class="metrics" aria-label="Monthly sample statistics">
+          <article class="metric"><span class="metric-label">Recorded plays <span aria-hidden="true">↗</span></span><strong>{{ dashboard.plays }}</strong><span class="metric-caption">plays in this sample month</span></article>
+          <article class="metric"><span class="metric-label">Estimated minutes <span aria-hidden="true">◷</span></span><strong>{{ dashboard.estimated_minutes }}<small>min</small></strong><span class="metric-caption">{{ dashboard.duration_coverage }}% duration coverage</span></article>
+          <article class="metric"><span class="metric-label">Artists in rotation <span aria-hidden="true">♫</span></span><strong>{{ dashboard.artist_count|stringformat:"02d" }}</strong><span class="metric-caption">different artists in the mix</span></article>
+          <article class="metric"><span class="metric-label">Albums explored <span aria-hidden="true">◎</span></span><strong>{{ dashboard.album_count|stringformat:"02d" }}</strong><span class="metric-caption">albums behind your tracks</span></article>
+        </section>
+
+        <section class="panel activity-panel" aria-labelledby="activity-title">
+          <div class="panel-heading"><div><p class="eyebrow">THE RHYTHM OF YOUR MONTH</p><h2 id="activity-title">Listening activity</h2></div><span class="chart-key"><i aria-hidden="true"></i> Recorded plays</span></div>
+          <figure>
+            <div class="bar-chart" aria-hidden="true">
+              {% for day in dashboard.activity %}
+                <div class="day-column{% if day.plays == None %} future-day{% endif %}" title="{{ selected_month|date:'M' }} {{ day.day }}: {% if day.plays == None %}future day{% else %}{{ day.plays }} sample plays{% endif %}">
+                  <div class="bar-track"><span class="bar" style="--bar-height: {{ day.height }}%"></span></div>
+                  <span class="day-label">{% if day.label %}{{ day.day|stringformat:"02d" }}{% endif %}</span>
+                </div>
+              {% endfor %}
+            </div>
+            <figcaption>Invented activity for {{ selected_month|date:"F" }} 1–{{ dashboard.available_days }}.{% if is_partial %} Future days have no data.{% endif %} <span>Daily plays · sample data</span></figcaption>
+          </figure>
+          <details class="activity-details"><summary>View daily counts as a table</summary><div class="table-scroll"><table><caption>Sample recorded plays per day</caption><thead><tr><th scope="col">Day</th><th scope="col">Plays</th></tr></thead><tbody>{% for day in dashboard.activity %}{% if day.plays != None %}<tr><td>{{ selected_month|date:"F" }} {{ day.day }}</td><td>{{ day.plays }}</td></tr>{% endif %}{% endfor %}</tbody></table></div></details>
+        </section>
+
+        <div class="ranking-grid">
+          <section class="panel" id="artists" aria-labelledby="artists-title">
+            <div class="panel-heading"><div><p class="eyebrow">ON REPEAT</p><h2 id="artists-title">Top artists</h2></div><span class="panel-meta">{{ dashboard.artist_count }} artists</span></div>
+            <ol class="artist-list">
+              {% for artist in dashboard.artists %}
+                <li><span class="rank-number">{{ forloop.counter|stringformat:"02d" }}</span><span class="artist-avatar color-{{ artist.color }}" aria-hidden="true">{{ artist.initials }}</span><div class="artist-info"><span class="artist-name">{{ artist.name }}</span><div class="artist-meter" aria-hidden="true"><span style="width: {{ artist.width }}%"></span></div></div><span class="play-count">{{ artist.plays }}<small>plays</small></span></li>
+              {% endfor %}
+            </ol>
+          </section>
+
+          <section class="panel" id="tracks" aria-labelledby="tracks-title">
+            <div class="panel-heading"><div><p class="eyebrow">THE SOUNDTRACK</p><h2 id="tracks-title">Top tracks</h2></div><span class="panel-meta">{{ dashboard.tracks|length }} tracks</span></div>
+            <div class="table-scroll"><table class="tracks-table"><caption class="sr-only">Top sample tracks by recorded plays</caption><thead><tr><th scope="col" class="rank-cell">#</th><th scope="col">TRACK / ARTIST</th><th scope="col" class="numeric">PLAYS</th></tr></thead><tbody>
+              {% for track in dashboard.tracks %}<tr><td class="rank-cell">{{ forloop.counter|stringformat:"02d" }}</td><th scope="row"><span class="track-name">{{ track.title }}</span><span class="track-artist">{{ track.artist }}</span></th><td class="numeric">{{ track.plays }}</td></tr>{% endfor %}
+            </tbody></table></div>
+          </section>
+        </div>
+
+        <section class="panel album-panel" aria-labelledby="albums-title">
+          <div class="panel-heading"><div><p class="eyebrow">THE BIGGER PICTURE</p><h2 id="albums-title">Albums in the mix</h2></div><span class="panel-meta">Ranked by sample plays</span></div>
+          <ol class="album-list">{% for album, plays in dashboard.albums %}<li><span class="album-art color-{{ forloop.counter0 }}" aria-hidden="true">◎</span><strong>{{ album }}</strong><span>{{ plays }} plays</span></li>{% endfor %}</ol>
+        </section>
+        <p class="coverage-note">About the estimate: {{ dashboard.known_duration_plays }} of {{ dashboard.plays }} sample plays have a known track duration. Song length is used as an estimate; it does not measure actual time listened.</p>
+      {% else %}
+        <section class="empty-state panel" aria-labelledby="empty-title">
+          <span class="empty-symbol" aria-hidden="true">♫</span>
+          <p class="eyebrow">A LITTLE QUIET HERE</p>
+          <h2 id="empty-title">No sample data for {{ selected_month|date:"F Y" }}.</h2>
+          <p>This prototype includes invented data for this month and last month.<br>This empty view does not mean that you listened to nothing.</p>
+          <a class="button-link" href="?month={{ current_month|date:'Y-m' }}">Explore this month's sample <span aria-hidden="true">↗</span></a>
+          <a class="text-link" href="?month={{ previous_month|date:'Y-m' }}">Or view last month</a>
+        </section>
+      {% endif %}
+    {% endif %}
+    <footer class="page-footer"><span>Made for a closer listen.</span><span>Local prototype <span aria-hidden="true">·</span> Synthetic data only</span></footer>
+  </main>
+</body>
+</html>
